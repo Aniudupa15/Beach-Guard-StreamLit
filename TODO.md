@@ -1,0 +1,13 @@
+- [x] Create processor.py with extracted processing logic
+- [x] Create streamlit_app.py with multi-page app (Landing, Dashboard, Settings)
+- [x] Add custom CSS for beach theme, animations, and professional styling
+- [x] Implement video upload processing on Landing page
+- [x] Implement camera feed using streamlit-webrtc on Dashboard
+- [x] Add metrics display for safe/moderate/danger counts
+- [x] Add alarm system with dismiss functionality
+- [x] Add password-protected settings page with threshold sliders
+- [x] Create requirements.txt with necessary dependencies
+- [ ] Install dependencies
+- [ ] Test the Streamlit app
+- [ ] Verify video processing integration
+- [ ] Test camera feed functionality
