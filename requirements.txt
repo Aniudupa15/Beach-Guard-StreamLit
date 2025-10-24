@@ -10,3 +10,4 @@ scipy
 pillow
 av
 gdown
+huggingface-hub
