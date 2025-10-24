@@ -20,36 +20,82 @@ IMG_SIZE = 640
 ONNX_MODEL_PATH = "unet_beach.onnx"
 YOLO_MODEL_PATH = "yolov8m.pt"
 
-# Replace with your Google Drive file IDs
-ONNX_MODEL_URL = "https://drive.google.com/file/d/1KOPbrwUtYJ0yGI8tc2qjBLVLfZ-PY5Ji/view?usp=drive_link"
-YOLO_MODEL_URL = "https://drive.google.com/file/d/1yDj15y9cBl16fdraY0zNBHwfaMpuJMQq/view?usp=drive_link"
+# FIXED: Extract proper file IDs from Google Drive URLs
+ONNX_FILE_ID = "1KOPbrwUtYJ0yGI8tc2qjBLVLfZ-PY5Ji"  # Extract ID from URL
+YOLO_FILE_ID = "1yDj15y9cBl16fdraY0zNBHwfaMpuJMQq"  # Extract ID from URL
 
 DEFAULT_SAFE_DIST = 50
 DEFAULT_MODERATE_DIST = 100
 DEFAULT_PASSWORD = "admin123"
 
 # ========================
-# Download models if missing
+# FIXED: Improved download with validation
 # ========================
-def download_model(path, url):
-    if not os.path.exists(path):
-        st.info(f"Downloading {os.path.basename(path)}, please wait...")
-        gdown.download(url, path, quiet=False)
-        st.success(f"{os.path.basename(path)} downloaded!")
+def download_model(path, file_id, model_name):
+    """Download model from Google Drive with validation"""
+    if os.path.exists(path):
+        # Verify file is not empty/corrupted
+        if os.path.getsize(path) < 1000:  # Less than 1KB indicates problem
+            st.warning(f"{model_name} exists but appears corrupted. Re-downloading...")
+            os.remove(path)
+        else:
+            st.info(f"✅ {model_name} already exists")
+            return True
+    
+    try:
+        st.info(f"📥 Downloading {model_name}, please wait...")
+        url = f"https://drive.google.com/uc?id={file_id}"
+        gdown.download(url, path, quiet=False, fuzzy=True)
+        
+        # Validate download
+        if os.path.exists(path) and os.path.getsize(path) > 1000:
+            st.success(f"✅ {model_name} downloaded successfully!")
+            return True
+        else:
+            st.error(f"❌ {model_name} download failed - file is missing or too small")
+            return False
+    except Exception as e:
+        st.error(f"❌ Error downloading {model_name}: {str(e)}")
+        return False
 
-download_model(ONNX_MODEL_PATH, ONNX_MODEL_URL)
-download_model(YOLO_MODEL_PATH, YOLO_MODEL_URL)
+# Download models before loading
+with st.spinner("Initializing models..."):
+    onnx_ready = download_model(ONNX_MODEL_PATH, ONNX_FILE_ID, "ONNX Model")
+    yolo_ready = download_model(YOLO_MODEL_PATH, YOLO_FILE_ID, "YOLO Model")
+    
+    if not (onnx_ready and yolo_ready):
+        st.error("❌ Model download failed. Please check your Google Drive links and permissions.")
+        st.stop()
 
 # ========================
-# Load models globally
+# Load models globally with error handling
 # ========================
 @st.cache_resource
 def load_models():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    yolo_model = YOLO(YOLO_MODEL_PATH).to(device)
-    session = ort.InferenceSession(ONNX_MODEL_PATH)
-    input_name = session.get_inputs()[0].name
-    return yolo_model, session, input_name, device
+    try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Load YOLO with error handling
+        st.info("Loading YOLO model...")
+        yolo_model = YOLO(YOLO_MODEL_PATH).to(device)
+        
+        # Load ONNX with validation
+        st.info("Loading ONNX model...")
+        if not os.path.exists(ONNX_MODEL_PATH):
+            raise FileNotFoundError(f"ONNX model not found at {ONNX_MODEL_PATH}")
+        
+        file_size = os.path.getsize(ONNX_MODEL_PATH)
+        st.info(f"ONNX model size: {file_size / (1024*1024):.2f} MB")
+        
+        session = ort.InferenceSession(ONNX_MODEL_PATH)
+        input_name = session.get_inputs()[0].name
+        
+        st.success("✅ All models loaded successfully!")
+        return yolo_model, session, input_name, device
+    except Exception as e:
+        st.error(f"❌ Error loading models: {str(e)}")
+        st.info("Please check:\n1. Model files are valid\n2. Google Drive links have public access\n3. Files downloaded completely")
+        raise e
 
 yolo_model, session, input_name, device = load_models()
 
@@ -268,7 +314,7 @@ def landing_page():
         RTC_CONFIGURATION = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
 
         class VideoProcessor:
-            def _init_(self):
+            def __init__(self):
                 self.frame_lock = threading.Lock()
                 self.out_image = None
 
