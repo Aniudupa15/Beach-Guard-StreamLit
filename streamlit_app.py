@@ -32,37 +32,44 @@ DEFAULT_PASSWORD = "admin123"
 # Download from Hugging Face
 # ========================
 @st.cache_resource
+@st.cache_resource
 def download_from_huggingface():
     """Download models from Hugging Face Hub"""
     try:
-        st.info("📥 Downloading models from Hugging Face...")
+        st.info(f"📥 Downloading models from {HF_REPO_ID}...")
         
+        # Download ONNX model
+        st.info("Downloading ONNX model...")
         onnx_path = hf_hub_download(
             repo_id=HF_REPO_ID,
             filename=ONNX_FILENAME,
-            cache_dir="./models"
+            cache_dir="./models",
+            resume_download=True
         )
+        st.success(f"✅ ONNX model downloaded: {os.path.getsize(onnx_path) / (1024*1024):.2f} MB")
         
+        # Download YOLO model
+        st.info("Downloading YOLO model...")
         yolo_path = hf_hub_download(
             repo_id=HF_REPO_ID,
             filename=YOLO_FILENAME,
-            cache_dir="./models"
+            cache_dir="./models",
+            resume_download=True
         )
+        st.success(f"✅ YOLO model downloaded: {os.path.getsize(yolo_path) / (1024*1024):.2f} MB")
         
-        st.success("✅ Models downloaded from Hugging Face!")
         return onnx_path, yolo_path
         
     except Exception as e:
         st.error(f"❌ Error downloading from Hugging Face: {str(e)}")
-        st.info("""
-        To use Hugging Face:
-        1. Create account at https://huggingface.co
-        2. Create a model repository
-        3. Upload your ONNX and YOLO model files
-        4. Update HF_REPO_ID in the code
+        st.info(f"""
+        **Troubleshooting Steps:**
+        1. Verify repository exists: https://huggingface.co/{HF_REPO_ID}
+        2. Check repository is PUBLIC (not private)
+        3. Verify files exist: {ONNX_FILENAME}, {YOLO_FILENAME}
+        4. Check filenames match EXACTLY (case-sensitive)
         """)
         raise e
-
 # Download models
 ONNX_MODEL_PATH, YOLO_MODEL_PATH = download_from_huggingface()
 
