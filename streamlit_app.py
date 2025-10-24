@@ -11,98 +11,73 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av
 import time
 import threading
-import gdown
+from huggingface_hub import hf_hub_download
 
 # ========================
 # CONFIG
 # ========================
 IMG_SIZE = 640
-ONNX_MODEL_PATH = "unet_beach.onnx"
-YOLO_MODEL_PATH = "yolov8m.pt"
 
-# FIXED: Extract proper file IDs from Google Drive URLs
-ONNX_FILE_ID = "1KOPbrwUtYJ0yGI8tc2qjBLVLfZ-PY5Ji"  # Extract ID from URL
-YOLO_FILE_ID = "1yDj15y9cBl16fdraY0zNBHwfaMpuJMQq"  # Extract ID from URL
+# RECOMMENDED: Upload your models to Hugging Face and use these
+# Example: https://huggingface.co/YOUR_USERNAME/beach-guard-models
+HF_REPO_ID = "aniudupa/ani"  # Replace with your repo
+ONNX_FILENAME = "unet_beach.onnx"
+YOLO_FILENAME = "yolov8m.pt"
 
 DEFAULT_SAFE_DIST = 50
 DEFAULT_MODERATE_DIST = 100
 DEFAULT_PASSWORD = "admin123"
 
 # ========================
-# FIXED: Improved download with validation
+# Download from Hugging Face
 # ========================
-def download_model(path, file_id, model_name, min_size_mb=1):
-    """Download model from Google Drive with validation"""
-    min_size_bytes = min_size_mb * 1024 * 1024
-    
-    if os.path.exists(path):
-        file_size = os.path.getsize(path)
-        if file_size < min_size_bytes:
-            st.warning(f"{model_name} exists but appears corrupted ({file_size/1024:.2f} KB). Re-downloading...")
-            os.remove(path)
-        else:
-            st.info(f"✅ {model_name} already exists ({file_size/(1024*1024):.2f} MB)")
-            return True
-    
+@st.cache_resource
+def download_from_huggingface():
+    """Download models from Hugging Face Hub"""
     try:
-        st.info(f"📥 Downloading {model_name}, please wait...")
+        st.info("📥 Downloading models from Hugging Face...")
         
-        # Force gdown to use direct download URL
-        url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        onnx_path = hf_hub_download(
+            repo_id=HF_REPO_ID,
+            filename=ONNX_FILENAME,
+            cache_dir="./models"
+        )
         
-        # Try download with multiple methods
-        try:
-            gdown.download(url, path, quiet=False, fuzzy=True)
-        except:
-            # Fallback: try without fuzzy
-            st.warning("Retrying download with different method...")
-            gdown.download(f"https://drive.google.com/uc?id={file_id}", path, quiet=False)
+        yolo_path = hf_hub_download(
+            repo_id=HF_REPO_ID,
+            filename=YOLO_FILENAME,
+            cache_dir="./models"
+        )
         
-        # Validate download
-        if os.path.exists(path):
-            file_size = os.path.getsize(path)
-            if file_size >= min_size_bytes:
-                st.success(f"✅ {model_name} downloaded successfully! ({file_size/(1024*1024):.2f} MB)")
-                return True
-            else:
-                st.error(f"❌ {model_name} download failed - file too small ({file_size/1024:.2f} KB)")
-                st.error("This usually means the Google Drive file is not publicly accessible.")
-                st.info(f"Please ensure the file is shared as 'Anyone with the link can view'")
-                return False
-        else:
-            st.error(f"❌ {model_name} file not created after download")
-            return False
+        st.success("✅ Models downloaded from Hugging Face!")
+        return onnx_path, yolo_path
+        
     except Exception as e:
-        st.error(f"❌ Error downloading {model_name}: {str(e)}")
-        st.info("Try: 1) Check file sharing permissions 2) Use alternative hosting")
-        return False
+        st.error(f"❌ Error downloading from Hugging Face: {str(e)}")
+        st.info("""
+        To use Hugging Face:
+        1. Create account at https://huggingface.co
+        2. Create a model repository
+        3. Upload your ONNX and YOLO model files
+        4. Update HF_REPO_ID in the code
+        """)
+        raise e
 
-# Download models before loading
-with st.spinner("Initializing models..."):
-    onnx_ready = download_model(ONNX_MODEL_PATH, ONNX_FILE_ID, "ONNX Model")
-    yolo_ready = download_model(YOLO_MODEL_PATH, YOLO_FILE_ID, "YOLO Model")
-    
-    if not (onnx_ready and yolo_ready):
-        st.error("❌ Model download failed. Please check your Google Drive links and permissions.")
-        st.stop()
+# Download models
+ONNX_MODEL_PATH, YOLO_MODEL_PATH = download_from_huggingface()
 
 # ========================
-# Load models globally with error handling
+# Load models globally
 # ========================
 @st.cache_resource
 def load_models():
     try:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        # Load YOLO with error handling
         st.info("Loading YOLO model...")
         yolo_model = YOLO(YOLO_MODEL_PATH).to(device)
         
-        # Load ONNX with validation
         st.info("Loading ONNX model...")
-        if not os.path.exists(ONNX_MODEL_PATH):
-            raise FileNotFoundError(f"ONNX model not found at {ONNX_MODEL_PATH}")
-        
         file_size = os.path.getsize(ONNX_MODEL_PATH)
         st.info(f"ONNX model size: {file_size / (1024*1024):.2f} MB")
         
@@ -111,13 +86,14 @@ def load_models():
         
         st.success("✅ All models loaded successfully!")
         return yolo_model, session, input_name, device
+        
     except Exception as e:
         st.error(f"❌ Error loading models: {str(e)}")
-        st.info("Please check:\n1. Model files are valid\n2. Google Drive links have public access\n3. Files downloaded completely")
         raise e
 
 yolo_model, session, input_name, device = load_models()
 
+# ... [Rest of your code remains the same]
 # ========================
 # Utility Functions
 # ========================
@@ -333,7 +309,7 @@ def landing_page():
         RTC_CONFIGURATION = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
 
         class VideoProcessor:
-            def __init__(self):
+            def _init_(self):
                 self.frame_lock = threading.Lock()
                 self.out_image = None
 
